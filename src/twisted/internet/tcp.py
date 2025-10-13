@@ -795,9 +795,9 @@ class Server(_TLSServerMixin, Connection):
 
     _base = Connection
 
-    _addressType: Union[
-        type[address.IPv4Address], type[address.IPv6Address]
-    ] = address.IPv4Address
+    _addressType: Union[type[address.IPv4Address], type[address.IPv6Address]] = (
+        address.IPv4Address
+    )
 
     def __init__(
         self,
@@ -961,8 +961,7 @@ class _IFileDescriptorReservation(Interface):
 
 
 class _HasClose(typing.Protocol):
-    def close(self) -> object:
-        ...
+    def close(self) -> object: ...
 
 
 @implementer(_IFileDescriptorReservation)
