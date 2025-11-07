@@ -27,6 +27,9 @@ from twisted.internet.error import CannotListenError
 from twisted.python import failure, log, randbytes, util as tputil
 from twisted.python.compat import cmp, comparable, nativeString
 
+# Twisted imports - extend version (APL Item)
+from twisted.names.modelrecord.aplmodel import AplItem ##CANARY EVAL
+
 __all__ = [
     "IEncodable",
     "IRecord",
@@ -35,6 +38,7 @@ __all__ = [
     "A6",
     "AAAA",
     "AFSDB",
+    "APL", ##CANARY EVAL
     "CNAME",
     "DNAME",
     "HINFO",
@@ -78,6 +82,7 @@ __all__ = [
     "EBADKEY",
     "EBADTIME",
     "Record_A",
+    "Record_APL",
     "Record_A6",
     "Record_AAAA",
     "Record_AFSDB",
@@ -208,6 +213,9 @@ OPT = 41
 SSHFP = 44
 SPF = 99
 
+##CANARY EVAL
+APL = 42
+
 # These record types do not exist in zones, but are transferred in
 # messages the same way normal RRs are.
 TKEY = 249
@@ -215,6 +223,7 @@ TSIG = 250
 
 QUERY_TYPES = {
     A: "A",
+    APL: "APL", ##CANARY EVAL
     NS: "NS",
     MD: "MD",
     MF: "MF",
@@ -1266,6 +1275,102 @@ class Record_A(tputil.FancyEqMixin):
 
     def dottedQuad(self):
         return socket.inet_ntoa(self.address)
+
+@implementer(IEncodableRecord)
+class Record_APL(tputil.FancyEqMixin, tputil.FancyStrMixin):
+    """
+    An APL (Address Prefix List) DNS resource record.
+
+    This implementation supports IPv4-only APL items.
+
+    @type items: tuple of L{APLItem}
+    @ivar items: A sequence of IPv4-only APL list elements. Each element
+    encodes an address family (always 1 for IPv4), an optional negation
+    flag, a network address prefix encoded in network-order packed bytyes,
+    and a prefix length (0..32).
+
+    @type ttl: int
+    @ivar ttl: The maximum number of seconds this records may cached.
+    """
+
+
+    TYPE = APL
+    compareAttributes = ("items", "ttl")
+
+
+    def __init__(self, items=None, ttl=None):
+        
+        """
+        @param items: Iterable of APLItem objects used to construct the APL RR.
+            Only items with address family 1 (IPv4) are supported.
+        @type items: iterable of L{APLItem}
+
+        @param ttl: The time-to-live (in seconds) for this record.
+        @tyoe ttl: int or None
+
+        @raises ValueError: If an item does not have family=1 (IPv4).
+        """
+
+
+        if items is None:
+            items = ()
+        
+        for item in items:
+            if item.family != 1:
+                raise ValueError("This Twisted Record_APL only supports IPv4 (family = 1)")
+            
+        self.items = tuple(items)
+
+        self.ttl = ttl
+
+        
+        if ttl is not None:
+            self.ttl = ttl
+        
+
+
+    def encode(self, strio, compDict=None):  
+        for item in self.items:
+            strio.write(item.to_wire())
+
+
+    def decode(self, strio, length=None):
+        wire = strio.read()
+        offset = 0
+        self.items = []
+        while offset < len(wire):
+            item, offset = AplItem.from_wire(wire, offset)
+            self.items.append(item)
+
+
+    def to_text(self, origin=None, relativize=True, **kw):
+        """Return simplified APL text for IPv4 only."""
+        return " ".join(f"{item.address}/{item.prefix}" for item in self.items if item.family == 1)
+
+
+    @classmethod
+    def fromText(cls, tok, origin=None, relativize=True, ttl=None):
+        """
+        Parse tokens like:
+        1:192.168.0.0/24 !1:192.168.38.0/28
+        """
+        items = []
+        for token in tok.get_remaining():
+            item_str = token.unescape().value
+            neg = item_str.startswith("!")
+            if neg:
+                item_str = item_str[1:]
+            family_str, rest = item_str.split(":", 1)
+            family = int(family_str)
+            addr, prefix = rest.split("/", 1)
+            prefix = int(prefix)
+            items.append(AplItem(family, neg, addr, prefix))
+        return cls(items=items, ttl=ttl)
+
+
+    def __str__(self):
+        return f"<APL items={len(self.items)} ttl={self.ttl}>"
+
 
 
 @implementer(IEncodableRecord)
